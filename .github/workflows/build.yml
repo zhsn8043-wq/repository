@@ -20,14 +20,25 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       
-      - name: Unzip project
+      - name: Unzip and explore project structure
         run: |
-          unzip -o SudanRescue.zip -d temp
-          cp -r temp/* .
-          rm -rf temp
+          unzip -o SudanRescue.zip -d extracted_project
+          ls -la extracted_project/
+          echo "===== محتويات المجلد بعد فك الضغط ====="
+          find extracted_project -type f -name "gradlew" | head -5
       
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Find gradlew and setup project
+        run: |
+          GRADLEW_PATH=$(find extracted_project -name "gradlew" -type f | head -1)
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "❌ لم يتم العثور على ملف gradlew!"
+            exit 1
+          fi
+          echo "✅ تم العثور على gradlew في: $GRADLEW_PATH"
+          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+          echo "📂 مجلد المشروع هو: $PROJECT_DIR"
+          cp -r "$PROJECT_DIR"/* .
+          chmod +x gradlew
       
       - name: Build with Gradle
         run: ./gradlew assembleDebug
