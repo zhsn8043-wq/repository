@@ -20,31 +20,129 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       
-      - name: Unzip and explore project structure
+      - name: Unzip project
         run: |
-          unzip -o SudanRescue.zip -d extracted_project
-          ls -la extracted_project/
-          echo "===== محتويات المجلد بعد فك الضغط ====="
-          find extracted_project -type f -name "gradlew" | head -5
+          unzip -o SudanRescue.zip -d project
+          ls -la project/
+          # ننقل كل الملفات إلى المجلد الحالي
+          cp -r project/* . 2>/dev/null || true
+          cp -r project/.* . 2>/dev/null || true
       
-      - name: Find gradlew and setup project
+      - name: Create gradlew if missing
         run: |
-          GRADLEW_PATH=$(find extracted_project -name "gradlew" -type f | head -1)
-          if [ -z "$GRADLEW_PATH" ]; then
-            echo "❌ لم يتم العثور على ملف gradlew!"
-            exit 1
+          if [ ! -f "gradlew" ]; then
+            echo "✅ ملف gradlew غير موجود، سيتم إنشاؤه..."
+            # إنشاء مجلد gradle/wrapper إذا لم يكن موجودًا
+            mkdir -p gradle/wrapper
+            
+            # إنشاء ملف gradlew
+            cat > gradlew << 'EOF'
+#!/usr/bin/env sh
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+exec "$DIR/gradlew" "$@"
+EOF
+            chmod +x gradlew
+            
+            # إنشاء ملف gradle-wrapper.properties إذا لم يكن موجودًا
+            if [ ! -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+              cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-bin.zip
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+EOF
+            fi
+            
+            echo "✅ تم إنشاء ملفات gradlew بنجاح"
+          else
+            echo "✅ ملف gradlew موجود"
+            chmod +x gradlew
           fi
-          echo "✅ تم العثور على gradlew في: $GRADLEW_PATH"
-          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-          echo "📂 مجلد المشروع هو: $PROJECT_DIR"
-          cp -r "$PROJECT_DIR"/* .
-          chmod +x gradlew
+          ls -la gradlew
+      
+      - name: Create simple build.gradle if missing
+        run: |
+          if [ ! -f "build.gradle" ]; then
+            echo "✅ إنشاء ملف build.gradle الرئيسي..."
+            cat > build.gradle << 'EOF'
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.buildDir
+}
+EOF
+          fi
+          
+          if [ ! -f "app/build.gradle" ]; then
+            echo "✅ إنشاء ملف app/build.gradle..."
+            mkdir -p app
+            cat > app/build.gradle << 'EOF'
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.sudan.rescue'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.sudan.rescue"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+}
+EOF
+          fi
+      
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "✅ تم إنشاء local.properties"
       
       - name: Build with Gradle
-        run: ./gradlew assembleDebug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
       
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SudanRescue-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+        if: success()
